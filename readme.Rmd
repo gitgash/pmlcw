@@ -1,0 +1,6 @@
+-   --
+title: "Practical Machine Learning Coursework"
+author: "Gashnikov"
+output: html_document
+---
+
