@@ -4,19 +4,117 @@ author: "Gashnikov"
 output: html_document
 ---
 
-Load Data
----------
+Data
+-----
+###Load
+The data for this work have been taken from [Human Activity Recognition project](http://groupware.les.inf.puc-rio.br/har)
+```{r cache=TRUE, echo = FALSE}
+if(!'train' %in% ls()) {
+    download.file(
+        "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+        "pml-training.csv", method="curl")
+    train = read.csv(file='pml-training.csv', as.is=T)
+    }
+
+if(!'test' %in% ls()) {
+    download.file(
+        "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+        "pml-testing.csv", method="curl")
+    test = read.csv(file='pml-testing.csv', as.is=T)
+    }
+```
+There are 2 datasets: train and test  
+Train has `r dim(train)[1]` rows 
+and `r dim(train)[2] - 1` features.  
+'classe' column contains classes that should be predicted by model.  
+Other columns contains features to possibly include in model.  
+Train and test datasets have the same set of columns besides last one - 
+in train it is 'classe' and there is target class for training in test there is
+problem_id - just id of test row.
+
+###Features selection
+First we should dismiss features that should not be in predictors for some reason:  
+X - just rownumber - it must not influence result  
+user_name - we should not take in account individual differences in our model  
+raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp - no timestamps  
+new_window, num_window - it seems it artefact from rolling window method
 ```{r cache=TRUE, echo = TRUE}
-download.file(
-    "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
-    "pml-training.csv", method="curl")
-train = read.csv(file='pml-training.csv')
-download.file(
-    "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
-    "pml-testing.csv", method="curl")
-test = read.csv(file='pml-testing.csv')
+train = subset(train, select=c(-X, -user_name, -raw_timestamp_part_1, -raw_timestamp_part_2, -cvtd_timestamp, -new_window, -num_window))
+```
+###We should fill NA's - lets do it:
+```{r cache=TRUE, echo = TRUE, warning=FALSE}
+library(caret)
+target <- train$classe
+target <- factor(x = target)
+train <- subset(train, select=-classe)
+train_m <- data.matrix(train)
+train_m[is.na(train_m)] <- 0
+```
+###Division for crossvalidation
+```{r cache=TRUE, echo = TRUE}
+inTrain <- createDataPartition(target, p=0.75, list=FALSE)
+training_x <- train_m[inTrain, ]
+verification_x <- train_m[-inTrain, ]
+training_y <- target[inTrain]
+verification_y <- target[-inTrain]
+
+#find variated features in set
+variated = apply(training_x, 2, var) > 0.1
 ```
 
+Model&Run
+-----
+Random forest training with PCA(0.95):
+```{r cache=TRUE, echo = TRUE}
+require('doMC')
+registerDoMC(cores = 4)
+if(!'modFit1' %in% ls()) {
+    modFit1 <- train(data.frame(training_x[, variated]), training_y, method="rf", preProcess='pca')
+    }
+pred <- predict(modFit1, newdata=data.frame(verification_x[, variated]))
+confusionMatrix(verification_y, pred)
+table(verification_y, pred)
+```
+Visualize:
+```{r}
+mosaicplot(table(verification_y, pred))
+```
+
+
+Predict on test data
+--------------------
+```{r cache=TRUE, echo = TRUE}
+#normalize test
+test = subset(test, select=c(-X, -user_name, -raw_timestamp_part_1, -raw_timestamp_part_2, -cvtd_timestamp, -new_window, -num_window, -problem_id))
+test_m <- data.matrix(test)
+test_m[is.na(test_m)] <- 0
+
+#predict
+pred_test <- predict(modFit1, newdata=data.frame(test_m[, variated]))
+
+#save results
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+setwd('../pred_data')
+pml_write_files(as.character(pred_test))
+setwd('../pmlcw')
+```
+
+Got 20 from 20!
+
+
+
+Citation
+========
+[1] Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Read more: http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz3DpOlOXOp
 
 
 

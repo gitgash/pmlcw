@@ -1,1 +1,5 @@
 *.csv
+index_cache/
+index_files/
+readme_cache/
+
